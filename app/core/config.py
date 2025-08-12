@@ -1,6 +1,8 @@
 # core/config.py
-from pydantic_settings import BaseSettings
 from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AHEAD Take Home Project"
@@ -14,6 +16,7 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
 
     # JWT
+    ALGORITHM: str
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 

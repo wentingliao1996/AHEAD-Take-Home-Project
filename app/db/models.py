@@ -1,6 +1,16 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Numeric, ForeignKey, Text
-from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -10,9 +20,10 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    files = relationship('File', back_populates='owner')
+    files = relationship('FileInfo', back_populates='owner')
+    activities = relationship('ActivityLog', back_populates='user')
 
-class File(Base):
+class FileInfo(Base):
     __tablename__ = 'files'
     id = Column(Integer, primary_key=True, index=True)
     owner_id = Column(Integer, ForeignKey('users.id'), nullable=True)
@@ -34,3 +45,14 @@ class TaskRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     result = Column(Text, nullable=True)
+
+class ActivityLog(Base):
+    __tablename__ = 'activity_logs'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    username = Column(String, nullable=False)
+    activity_type = Column(String, nullable=False)  # login, logout, file_upload, file_public, etc.
+    description = Column(Text, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship('User', back_populates='activities')
