@@ -19,3 +19,7 @@ async def get_user_by_email(db: AsyncSession, email: str):
 async def get_user_activities(db: AsyncSession, user_id: int) -> List[ActivityLog]:
     q = await db.execute(select(ActivityLog).where(ActivityLog.user_id == user_id).order_by(ActivityLog.timestamp.desc()))
     return q.scalars().all()
+    
+def get_fcs_version(path: str) -> str:
+    fd = flowio.FlowData(path)
+    return fd.version
