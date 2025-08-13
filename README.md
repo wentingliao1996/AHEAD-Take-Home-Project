@@ -46,3 +46,145 @@
 - **對單一使用者**：
   - 列出上傳的檔案總數以及硬碟總使用量
 
+## 說明
+
+此專案提供一個以 FastAPI 為核心的檔案上傳與任務背景處理服務，支援使用者註冊/登入（JWT）、FCS 檔案上傳與管理、Celery 背景計算、以及以 Alembic 進行資料庫版本管理。
+
+### 主要技術架構
+- **後端框架**: FastAPI + Starlette
+- **資料庫**: PostgreSQL（SQLAlchemy）
+- **背景任務**: Celery（Broker/Backend: Redis）
+- **驗證**: JWT（`python-jose`），HTTP Bearer
+- **檔案處理**: 分段串流寫入、FCS 解析（`flowio`）
+- **容器**: Docker、docker-compose
+
+### 專案亮點
+- **可上傳大型 FCS 檔案**：串流寫入避免記憶體爆量，允許設定單檔大小上限。
+- **公開/私人檔案**：支援匿名公開上傳或綁定使用者私人檔案，並可切換可見性。
+- **完整活動紀錄**：登入、登出、上傳、讀取、可見性變更皆記錄於 `activity_logs`。
+- **背景任務與狀態查詢**：以 Celery 建立統計任務，支援進度/結果輪詢。
+- **自訂 OpenAPI 與 Bearer 安全機制**：Swagger UI 內可直接帶入 Bearer Token 測試。
+
+
+## 環境建置指南
+
+### 1) 準備 .env
+在專案根目錄建立 `.env` 檔：
+```bash
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=thp
+
+# JWT
+SECRET_KEY=please_change_me
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+# Redis（docker-compose 服務名）
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# 檔案上傳
+UPLOAD_DIR=uploads
+MAX_FILE_MB=1000
+```
+
+### 2) 使用 Make 指令（建議）
+- 啟動服務（API、DB、Redis）：
+```bash
+make start
+```
+
+相關服務：
+- API: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+- Flower: `http://localhost:5555`
+
+
+## API 文件
+
+Swagger 互動式文件：[`http://localhost:8000/docs`](http://localhost:8000/docs)
+
+以下為主要路由（所有路由預設於 OpenAPI 設置了 Bearer 安全機制；未標註「需登入」者採可選驗證）：
+
+### Authentication `/auth`
+- POST `/auth/register`
+  - 傳入：`{ "email": EmailStr, "password": str }`
+  - 回傳：`{ "access_token": str, "token_type": "bearer" }`
+- POST `/auth/login`
+  - 傳入：`{ "email": EmailStr, "password": str }`
+  - 回傳：`{ "access_token": str, "token_type": "bearer" }`
+- POST `/auth/logout`（需登入）
+  - 回傳：`{ "message": "Logged out successfully" }`
+
+範例（登入）：
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"pass"}'
+```
+
+### Files `/files`
+- POST `/files/upload`（可選登入）
+  - multipart form：
+    - `file`: .fcs 檔案
+    - `is_public`: bool（預設 true）
+  - 回傳：
+    ```json
+    {
+      "short_link": "/files/{slug}",
+      "filename": "*.fcs",
+      "size": number,
+      "fcs_version": "FCSx.y",
+      "is_public": true,
+      "owner_id": 1
+    }
+    ```
+- GET `/files`（可選登入）
+  - 未登入：回傳公開檔案列表
+  - 已登入：回傳公開 + 該用戶私人檔案列表
+- PUT `/{slug}/visibility`（需登入且為檔案擁有者）
+  - 參數：`slug`、`is_public`（query 或 body）
+  - 回傳：`{ "message": "File visibility updated successfully" }`
+
+上傳範例：
+```bash
+curl -X POST http://localhost:8000/files/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/path/to/file.fcs" \
+  -F "is_public=true"
+```
+
+### Statistics `/stats`
+- POST `/stats/tasks`（需登入）
+  - 建立背景任務，回傳：`{ "task_id": str, "status": "PENDING" }`
+- GET `/stats/tasks/{task_id}`
+  - 查詢任務狀態與結果：
+    ```json
+    { "task_id": "id", "status": "PENDING|RUNNING|FINISHED|FAILURE", "result": null|object }
+    ```
+- GET `/stats/user/all_fcs_info`（需登入）
+  - 回傳使用者所有 FCS 檔案的摘要資訊
+- GET `/stats/user/files_statistics`（需登入）
+  - 回傳使用者檔案統計（總數/總大小）
+
+
+## 如何測試與驗收
+
+### 1) 執行測試
+先確保容器服務與資料庫已啟動（或本機服務與 DB/Redis 已啟動）。
+```bash
+make test
+```
+
+### 2) 手動驗收重點
+1. 註冊/登入：以 `/auth/register` 建帳號，並以 `/auth/login` 取得 `access_token`。
+2. Swagger 驗證：於 [`/docs`](http://localhost:8000/docs) 右上角 Authorize 輸入 `Bearer {access_token}`。
+3. 上傳檔案：呼叫 `/files/upload` 上傳 .fcs 檔案，驗證回傳 `short_link`、`fcs_version`、`is_public`。
+4. 檔案列表：未登入呼叫 `/files` 僅見公開檔；登入後可見自己私人檔。
+5. 切換可見性：以檔案擁有者身份呼叫 `PUT /{slug}/visibility` 切換公開/私人。
+6. 建立背景任務：呼叫 `POST /stats/tasks` 取得 `task_id`，以 `GET /stats/tasks/{task_id}` 輪詢直到 `FINISHED`，檢視 `result`。
+7. 使用者統計：`GET /stats/user/all_fcs_info`、`GET /stats/user/files_statistics` 回傳正確資訊。
+
