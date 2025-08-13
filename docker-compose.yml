@@ -1,4 +1,27 @@
+version: '3.8'
 services:
+  api:
+    build: ./api
+    container_name: api
+    ports:
+      - '8000:8000'
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./uploads:/app/uploads
+  worker:
+    build: ./api
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./uploads:/app/uploads
   db:
     image: postgres:15
     environment:
@@ -6,4 +29,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+    ports:
+      - '6379:6379'
+volumes:
+  pgdata:
