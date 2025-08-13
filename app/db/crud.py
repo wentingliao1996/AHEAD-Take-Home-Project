@@ -48,3 +48,17 @@ async def create_activity_log(db: AsyncSession, **kwargs) -> ActivityLog:
     await db.commit()
     await db.refresh(log)
     return log
+
+async def update_task_status(db: AsyncSession, task_id: str, status: str, result: str = None):
+    q = await db.execute(select(TaskRecord).where(TaskRecord.task_id == task_id))
+    t = q.scalars().first()
+    if not t:
+        return None
+    t.status = status
+    if status == 'finished':
+        t.finished_at = datetime.utcnow()
+        t.result = result
+    db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    return t
