@@ -79,3 +79,23 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
 
     return {"access_token": access_token, "token_type": "bearer"}
 
+@router.post("/logout")
+async def logout(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """用戶登出"""
+    if not current_user:
+        raise HTTPException(status_code=403, detail="Please login")
+    # 記錄登出活動
+    await create_activity_log(
+        db,
+        user_id=current_user.id,
+        username=current_user.email,
+        activity_type="user_logout",
+        description="User logged out"
+    )
+    
+    logger.info(f"User logged out: {current_user.email}")
+    
+    return {"message": "Logged out successfully"}
